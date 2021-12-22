@@ -19,6 +19,7 @@ import gym
 import gym_duckietown
 
 from gym_duckietown.envs import DuckietownEnv
+from gym_duckietown.simulator import WINDOW_HEIGHT, WINDOW_WIDTH
 from gym_duckietown.wrappers import UndistortWrapper
 
 import cv2
@@ -59,7 +60,7 @@ CENTER_HEIGHT = CAMERA_HEIGHT/2
 
 env = DuckietownEnv(
     seed = 1,
-    #map_name = "simple",
+    #map_name = "regress_4way_adam",
     map_name = "small_loop_pedestrians",
     
     draw_curve = False,
@@ -166,6 +167,7 @@ def seguidor_linea(blancas, amarillas, patos):
 
     """
     y= 0
+    x = 0.4
     b= 0.2
     m = 4
     y_blancas, y_amarillas, y_patos = (0,0,0,)
@@ -176,12 +178,22 @@ def seguidor_linea(blancas, amarillas, patos):
         a = blancas[:,2].mean()
         b = blancas[:,3].mean()
         d = 1 if a <= 0 else -1
+        x00 = blancas[:,4].mean()
+        x01 = blancas[:,5].mean()
         last_direction_blanca = d
         avg = np.abs(a) 
-        y_blancas = np.abs(avg*m)*d
+        es_derecha = x01 >= WINDOW_WIDTH/2 
+
+        if es_derecha:
+            y_blancas = np.abs(avg*m)
+        else:
+            y_blancas = np.abs(avg*m*8)*-1
+        print(f"a:{a:.2f},b:{b:.2f}, theta:{theta:.2f}, x00:{x00:.2f}, x01:{x01:.2f}")
+        
     if len(patos) > 0 and patos[:,3].max() > 0.3*CAMERA_HEIGHT:
         ARGMAX = patos[:,3].argmax()
-        #d = -1 if (patos[ARGMAX,0] + patos[ARGMAX,2]/2) < (CAMERA_WIDTH/2) else 1
+        # Freno de emergencia
+        # x = 0
         d = last_direction_blanca
         pos = d*(patos[ARGMAX,3]*m / CAMERA_HEIGHT)+(d*b)
         y_patos = pos
@@ -190,10 +202,15 @@ def seguidor_linea(blancas, amarillas, patos):
             avg = amarillas[:,2].mean()
             d = 1 if avg < 0 else -1
             avg = np.abs(1-avg)
-            y_amarillas = (avg*d)+(b*d)
+            x01 = amarillas[:,5].mean()
+            es_derecha = x01 >= WINDOW_WIDTH/2 
+            if es_derecha:
+                y_amarillas = (m*8*-1)+(b*-1)
+            else:
+                y_amarillas = (m)+(b)
     y = y_blancas + y_amarillas + y_patos
-    print(f"({y_blancas:.2f}, {y_amarillas:.2f},{y_patos:.2f})")
-    action = np.array([0.4, y])
+    #print(f"({y_blancas:.2f}, {y_amarillas:.2f},{y_patos:.2f})")
+    action = np.array([x, y])
 
     return action
 
@@ -217,7 +234,7 @@ def detector_objetos(mask, image, min_area):
             cv2.rectangle(image, (int(x), int(y)), (int(x2),int(y2)), (255,0,0), 3)
             detections.append((x, y, w, h, ))
     return np.array(detections)
-
+SIZE_IMAGE = (WINDOW_HEIGHT**2 + WINDOW_WIDTH**2)**.5
 def detector_lineas(mask, image, threshold):
     detections= []
     mask[0:int(0.5*CAMERA_HEIGHT)] = 0
@@ -240,13 +257,17 @@ def detector_lineas(mask, image, threshold):
         b = np.sin(theta)
         x0 = a*rho
         y0 = b*rho
-        x1 = int(x0 + 1000*(-b))
-        y1 = int(y0 + 1000*(a))
-        x2 = int(x0 - 1000*(-b))
-        y2 = int(y0 - 1000*(a))
+        x1 = int(x0 + SIZE_IMAGE*(-b))
+        y1 = int(y0 + SIZE_IMAGE*(a))
+        x2 = int(x0 - SIZE_IMAGE*(-b))
+        y2 = int(y0 - SIZE_IMAGE*(a))
+        m = (y2 - y1) / ((x2 - x1)+0.0001)
+        c = y1 - m*x1
+        x00 = -c/m
+        x01 = (WINDOW_HEIGHT-c)/m
         if np.abs(y1-y2) > 1:
             cv2.line(image, (x1,y1), (x2,y2), (0, 0, 255), 1, cv2.LINE_AA)
-            detections.append((rho, theta, a, b, ))
+            detections.append((rho, theta, a, b, x00, x01, ))
 
     return np.array(detections)
 
@@ -293,7 +314,7 @@ while run:
     patos = cv2.cvtColor(segment_image, cv2.COLOR_HSV2BGR)
 
     cuadros_patos = detector_objetos(patos_mask, patos, 100)
-    cv2.imshow("patos", patos)
+    #cv2.imshow("patos", patos)
     cv2.waitKey(1)
     
     #########################################################
@@ -310,7 +331,7 @@ while run:
     amarilla_segment_image = cv2.bitwise_and(converted,converted, mask= amarilla_mask)
     amarilla = cv2.cvtColor(amarilla_segment_image, cv2.COLOR_HSV2BGR)
     lineas_amarillas = detector_lineas(amarilla_mask, amarilla, 80)
-    cv2.imshow("amarillas", amarilla)
+    #cv2.imshow("amarillas", amarilla)
     cv2.waitKey(1)
     #########################################################
 
@@ -320,6 +341,9 @@ while run:
     if mode == 1:
         action = seguidor_linea(lineas_blancas, lineas_amarillas, cuadros_patos)
 
+    if mode == 2:
+        action = seguidor_linea(lineas_blancas, lineas_amarillas, cuadros_patos)
+        action = manual_control()
     #########################################################
 
 
