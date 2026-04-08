@@ -48,6 +48,12 @@ class DynamicsInfo:
     motor_left: float
     motor_right: float
 
+from gym_duckietown.simulator_map import SimulatorMap
+from .collision import *
+# Objects utility code
+from .objects import WorldObj, DuckieObj, TrafficLightObj
+# Graphics utility code
+from .objmesh import *
 
 # Rendering window size
 WINDOW_WIDTH = 800
@@ -226,14 +232,6 @@ class Simulator(gym.Env):
         # If true, then we publish all transparency information
         self.full_transparency = full_transparency
 
-        # Map name, set in _load_map()
-        self.map_name = None
-
-        # Full map file path, set in _load_map()
-        self.map_file_path = None
-
-        # The parsed content of the map_file
-        self.map_data = None
 
         # Maximum number of steps per episode
         self.max_steps = max_steps
@@ -387,6 +385,28 @@ class Simulator(gym.Env):
         ]
         self.ground_vlist = pyglet.graphics.vertex_list(4, ('v3f', verts))
 
+        # allowed angle in lane for starting position
+        self.accept_start_angle_deg = accept_start_angle_deg
+
+        # Load the map
+        self.sim_map = SimulatorMap()
+        self.sim_map._load_map(map_name)
+
+        # Distortion params, if so, load the library
+        self.distortion = distortion 
+        if distortion:
+            from .distortion import Distortion
+            self.camera_model = Distortion()
+
+        # Used by the UndistortWrapper, always initialized to False
+        self.undistort = False
+        
+        # Start tile
+        self.user_tile_start = user_tile_start
+
+        # Initialize the state
+        self.reset()
+
     def reset(self):
         """
         Reset the simulation at the start of a new episode
@@ -480,8 +500,10 @@ class Simulator(gym.Env):
 
         self.tri_vlist = pyglet.graphics.vertex_list(3 * numTris, ('v3f', verts), ('c3f', colors))
 
+
+
         # Randomize tile parameters
-        for tile in self.grid:
+        for tile in self.sim_map.grid:
             rng = self.np_random if self.domain_rand else None
             # Randomize the tile texture
             tile['texture'] = Texture.get(tile['kind'], rng=rng)
@@ -490,7 +512,7 @@ class Simulator(gym.Env):
             tile['color'] = self._perturb([1, 1, 1], 0.2)
 
         # Randomize object parameters
-        for obj in self.objects:
+        for obj in self.sim_map.objects:
             # Randomize the object color
             obj.color = self._perturb([1, 1, 1], 0.3)
 
@@ -504,7 +526,7 @@ class Simulator(gym.Env):
         if self.user_tile_start:
             logger.info('using user tile start: %s' % self.user_tile_start)
             i, j = self.user_tile_start
-            tile = self._get_tile(i, j)
+            tile = self.sim_map._get_tile(i, j)
             if tile is None:
                 msg = 'The tile specified does not exist.'
                 raise Exception(msg)
@@ -600,206 +622,6 @@ class Simulator(gym.Env):
         # Return first observation
         return obs
 
-    def _load_map(self, map_name):
-        """
-        Load the map layout from a YAML file
-        """
-
-        # Store the map name
-        self.map_name = map_name
-
-        # Get the full map file path
-        self.map_file_path = get_file_path('maps', map_name, 'yaml')
-
-        logger.debug('loading map file "%s"' % self.map_file_path)
-
-        with open(self.map_file_path, 'r') as f:
-            self.map_data = yaml.load(f, Loader=yaml.Loader)
-
-        self._interpret_map(self.map_data)
-
-    def _interpret_map(self, map_data: dict):
-        if not 'tile_size' in map_data:
-            msg = 'Must now include explicit tile_size in the map data.'
-            raise ValueError(msg)
-        self.road_tile_size = map_data['tile_size']
-        self._init_vlists()
-
-        tiles = map_data['tiles']
-        assert len(tiles) > 0
-        assert len(tiles[0]) > 0
-
-        # Create the grid
-        self.grid_height = len(tiles)
-        self.grid_width = len(tiles[0])
-        # noinspection PyTypeChecker
-        self.grid = [None] * self.grid_width * self.grid_height
-
-        # We keep a separate list of drivable tiles
-        self.drivable_tiles = []
-
-        # For each row in the grid
-        for j, row in enumerate(tiles):
-            msg = "each row of tiles must have the same length"
-            if len(row) != self.grid_width:
-                raise Exception(msg)
-
-            # For each tile in this row
-            for i, tile in enumerate(row):
-                tile = tile.strip()
-
-                if tile == 'empty':
-                    continue
-
-                if '/' in tile:
-                    kind, orient = tile.split('/')
-                    kind = kind.strip(' ')
-                    orient = orient.strip(' ')
-                    angle = ['S', 'E', 'N', 'W'].index(orient)
-                    drivable = True
-                elif '4' in tile:
-                    kind = '4way'
-                    angle = 2
-                    drivable = True
-                else:
-                    kind = tile
-                    angle = 0
-                    drivable = False
-
-                tile = cast(TileDict, {
-                    'coords': (i, j),
-                    'kind': kind,
-                    'angle': angle,
-                    'drivable': drivable
-                })
-
-                self._set_tile(i, j, tile)
-
-                if drivable:
-                    tile['curves'] = self._get_curve(i, j)
-                    self.drivable_tiles.append(tile)
-
-        self.mesh = ObjMesh.get('duckiebot')
-        self._load_objects(map_data)
-
-        # Get the starting tile from the map, if specified
-        self.start_tile = None
-        if 'start_tile' in map_data:
-            coords = map_data['start_tile']
-            self.start_tile = self._get_tile(*coords)
-
-        # Get the starting pose from the map, if specified
-        self.start_pose = None
-        if 'start_pose' in map_data:
-            self.start_pose = map_data['start_pose']
-
-    def _load_objects(self, map_data):
-        # Create the objects array
-        self.objects = []
-
-        # The corners for every object, regardless if collidable or not
-        self.object_corners = []
-
-        # Arrays for checking collisions with N static objects
-        # (Dynamic objects done separately)
-        # (N x 2): Object position used in calculating reward
-        self.collidable_centers = []
-
-        # (N x 2 x 4): 4 corners - (x, z) - for object's boundbox
-        self.collidable_corners = []
-
-        # (N x 2 x 2): two 2D norms for each object (1 per axis of boundbox)
-        self.collidable_norms = []
-
-        # (N): Safety radius for object used in calculating reward
-        self.collidable_safety_radii = []
-
-        # For each object
-        for obj_idx, desc in enumerate(map_data.get('objects', [])):
-            kind = desc['kind']
-
-            pos = desc['pos']
-            x, z = pos[0:2]
-            y = pos[2] if len(pos) == 3 else 0.0
-
-            rotate = desc['rotate']
-            optional = desc.get('optional', False)
-
-            pos = self.road_tile_size * np.array((x, y, z))
-
-            # Load the mesh
-            mesh = ObjMesh.get(kind)
-
-            if 'height' in desc:
-                scale = desc['height'] / mesh.max_coords[1]
-            else:
-                scale = desc['scale']
-            assert not ('height' in desc and 'scale' in desc), "cannot specify both height and scale"
-
-            static = desc.get('static', True)
-            # static = desc.get('static', False)
-            # print('static is now', static)
-
-            obj_desc = {
-                'kind': kind,
-                'mesh': mesh,
-                'pos': pos,
-                'scale': scale,
-                'y_rot': rotate,
-                'optional': optional,
-                'static': static,
-            }
-
-            # obj = None
-            if static:
-                if kind == "trafficlight":
-                    obj = TrafficLightObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT)
-                else:
-                    obj = WorldObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT)
-            else:
-                if kind == "duckiebot":
-                    obj = DuckiebotObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT, WHEEL_DIST,
-                                       ROBOT_WIDTH, ROBOT_LENGTH)
-                elif kind == "duckie":
-                    obj = DuckieObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT, self.road_tile_size)
-                elif kind == "checkerboard":
-                    obj = CheckerboardObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT, self.road_tile_size)
-                else:
-                    msg = 'I do not know what object this is: %s' % kind
-                    raise Exception(msg)
-
-            self.objects.append(obj)
-
-            # Compute collision detection information
-
-            # angle = rotate * (math.pi / 180)
-
-            # Find drivable tiles object could intersect with
-            possible_tiles = find_candidate_tiles(obj.obj_corners, self.road_tile_size)
-
-            # If the object intersects with a drivable tile
-            if not static or (static and kind != "trafficlight" and self._collidable_object(
-                obj.obj_corners, obj.obj_norm, possible_tiles
-            )):
-                self.collidable_centers.append(pos)
-                self.collidable_corners.append(obj.obj_corners.T)
-                self.collidable_norms.append(obj.obj_norm)
-                self.collidable_safety_radii.append(obj.safety_radius)
-
-        # If there are collidable objects
-        if len(self.collidable_corners) > 0:
-            self.collidable_corners = np.stack(self.collidable_corners, axis=0)
-            self.collidable_norms = np.stack(self.collidable_norms, axis=0)
-
-            # Stack doesn't do anything if there's only one object,
-            # So we add an extra dimension to avoid shape errors later
-            if len(self.collidable_corners.shape) == 2:
-                self.collidable_corners = self.collidable_corners[np.newaxis]
-                self.collidable_norms = self.collidable_norms[np.newaxis]
-
-        self.collidable_centers = np.array(self.collidable_centers)
-        self.collidable_safety_radii = np.array(self.collidable_safety_radii)
-
     def close(self):
         pass
 
@@ -807,23 +629,6 @@ class Simulator(gym.Env):
         self.np_random, _ = seeding.np_random(seed)
         return [seed]
 
-    def _set_tile(self, i: int, j: int, tile: TileDict) -> None:
-        assert 0 <= i < self.grid_width
-        assert 0 <= j < self.grid_height
-        index: int = j * self.grid_width + i
-        self.grid[index] = tile
-
-    def _get_tile(self, i: int, j: int) -> Optional[TileDict]:
-        """
-            Returns None if the duckiebot is not in a tile.
-        """
-        i = int(i)
-        j = int(j)
-        if i < 0 or i >= self.grid_width:
-            return None
-        if j < 0 or j >= self.grid_height:
-            return None
-        return self.grid[j * self.grid_width + i]
 
     def _perturb(self, val: np.array, scale=0.1):
         """
@@ -1068,7 +873,7 @@ class Simulator(gym.Env):
 
         return pts
 
-    def closest_curve_point(self, pos: np.array, angle: float) -> Tuple[Optional[np.array], Optional[np.array]]:
+    def closest_curve_point(self, pos, angle):
         """
             Get the closest point on the curve to a given point
             Also returns the tangent at that point.
@@ -1141,138 +946,8 @@ class Simulator(gym.Env):
         return LanePosition(dist=signedDist, dot_dir=dotDir, angle_deg=angle_deg,
                             angle_rad=angle_rad)
 
-    def _drivable_pos(self, pos) -> bool:
-        """
-        Check that the given (x,y,z) position is on a drivable tile
-        """
-
-        coords = self.get_grid_coords(pos)
-        tile = self._get_tile(*coords)
-        if tile is None:
-            msg = f'No tile found at {pos} {coords}'
-            logger.debug(msg)
-            return False
-
-        if not tile['drivable']:
-            msg = f'{pos} corresponds to tile at {coords} which is not drivable: {tile}'
-            logger.debug(msg)
-            return False
-
-        return True
-
-    def proximity_penalty2(self, pos, angle):
-        """
-        Calculates a 'safe driving penalty' (used as negative rew.)
-        as described in Issue #24
-
-        Describes the amount of overlap between the "safety circles" (circles
-        that extend further out than BBoxes, giving an earlier collision 'signal'
-        The number is max(0, prox.penalty), where a lower (more negative) penalty
-        means that more of the circles are overlapping
-        """
-
-        pos = _actual_center(pos, angle)
-        if len(self.collidable_centers) == 0:
-            static_dist = 0
-
-        # Find safety penalty w.r.t static obstacles
-        else:
-            d = np.linalg.norm(self.collidable_centers - pos, axis=1)
-
-            if not safety_circle_intersection(d, AGENT_SAFETY_RAD, self.collidable_safety_radii):
-                static_dist = 0
-            else:
-                static_dist = safety_circle_overlap(d, AGENT_SAFETY_RAD, self.collidable_safety_radii)
-
-        total_safety_pen = static_dist
-        for obj in self.objects:
-            # Find safety penalty w.r.t dynamic obstacles
-            total_safety_pen += obj.proximity(pos, AGENT_SAFETY_RAD)
-
-        return total_safety_pen
-
-    def _inconvenient_spawn(self, pos):
-        """
-        Check that agent spawn is not too close to any object
-        """
-
-        results = [np.linalg.norm(x.pos - pos) <
-                   max(x.max_coords) * 0.5 * x.scale + MIN_SPAWN_OBJ_DIST
-                   for x in self.objects if x.visible
-                   ]
-        return np.any(results)
-
-    def _collision(self, agent_corners):
-        """
-        Tensor-based OBB Collision detection
-        """
-        # Generate the norms corresponding to each face of BB
-        agent_norm = generate_norm(agent_corners)
-
-        # Check collisions with static objects
-        collision = intersects(
-            agent_corners,
-            self.collidable_corners,
-            agent_norm,
-            self.collidable_norms
-        )
-
-        if collision:
-            return True
-
-        # Check collisions with Dynamic Objects
-        for obj in self.objects:
-            if obj.check_collision(agent_corners, agent_norm):
-                return True
-
-        # No collision with any object
-        return False
-
-    def _valid_pose(self, pos, angle, safety_factor=1.0):
-        """
-            Check that the agent is in a valid pose
-
-            safety_factor = minimum distance
-        """
-
-        # Compute the coordinates of the base of both wheels
-        pos = _actual_center(pos, angle)
-        f_vec = get_dir_vec(angle)
-        r_vec = get_right_vec(angle)
-
-        l_pos = pos - (safety_factor * 0.5 * ROBOT_WIDTH) * r_vec
-        r_pos = pos + (safety_factor * 0.5 * ROBOT_WIDTH) * r_vec
-        f_pos = pos + (safety_factor * 0.5 * ROBOT_LENGTH) * f_vec
-
-        # Check that the center position and
-        # both wheels are on drivable tiles and no collisions
-
-        all_drivable = (self._drivable_pos(pos) and
-                        self._drivable_pos(l_pos) and
-                        self._drivable_pos(r_pos) and
-                        self._drivable_pos(f_pos))
-
-        # Recompute the bounding boxes (BB) for the agent
-        agent_corners = get_agent_corners(pos, angle)
-        no_collision = not self._collision(agent_corners)
-
-        res = (no_collision and all_drivable)
-
-        if not res:
-            logger.debug(f'Invalid pose. Collision free: {no_collision} On drivable area: {all_drivable}')
-            logger.debug(f'safety_factor: {safety_factor}')
-            logger.debug(f'pos: {pos}')
-            logger.debug(f'l_pos: {l_pos}')
-            logger.debug(f'r_pos: {r_pos}')
-            logger.debug(f'f_pos: {f_pos}')
-
-        return res
-
-    def update_physics(self, action, delta_time: float = None):
-        # print("updating physics")
-        if delta_time is None:
-            delta_time = self.delta_time
-        self.wheelVels = action * self.robot_speed * 1
+    def update_physics(self, action):
+        wheelVels = action * self.robot_speed * 1
         prev_pos = self.cur_pos
 
         # Update the robot's position
@@ -1740,24 +1415,6 @@ class Simulator(gym.Env):
         gl.glFlush()
 
 
-def get_dir_vec(cur_angle):
-    """
-    Vector pointing in the direction the agent is looking
-    """
-
-    x = math.cos(cur_angle)
-    z = -math.sin(cur_angle)
-    return np.array([x, 0, z])
-
-
-def get_right_vec(cur_angle):
-    """
-    Vector pointing to the right of the agent
-    """
-
-    x = math.sin(cur_angle)
-    z = math.cos(cur_angle)
-    return np.array([x, 0, z])
 
 
 def _update_pos(self, action):
@@ -1775,22 +1432,3 @@ def _update_pos(self, action):
     return pos, angle
 
 
-def _actual_center(pos, angle):
-    """
-    Calculate the position of the geometric center of the agent
-    The value of self.cur_pos is the center of rotation.
-    """
-
-    dir_vec = get_dir_vec(angle)
-    return pos + (CAMERA_FORWARD_DIST - (ROBOT_LENGTH / 2)) * dir_vec
-
-
-def get_agent_corners(pos, angle):
-    agent_corners = agent_boundbox(
-        _actual_center(pos, angle),
-        ROBOT_WIDTH,
-        ROBOT_LENGTH,
-        get_dir_vec(angle),
-        get_right_vec(angle)
-    )
-    return agent_corners
