@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Tuple
 import geometry
 
+from duckietown_world.world_duckietown.pwm_dynamics import get_DB18_nominal
+
 @dataclass
 class DoneRewardInfo:
     done: bool
@@ -14,6 +16,10 @@ class DoneRewardInfo:
     done_code: str
     reward: float
 
+@dataclass
+class DynamicsInfo:
+    motor_left: float
+    motor_right: float
 
 import gym
 import yaml
@@ -512,6 +518,15 @@ class Simulator(gym.Env):
 
         self.cur_pos = propose_pos
         self.cur_angle = propose_angle
+
+        init_vel = np.array([0, 0])
+
+        # Initialize Dynamics model
+        p = get_DB18_nominal(delay=0.15)
+        q = self.cartesian_from_weird(self.cur_pos, self.cur_angle)
+        v0 = geometry.se2_from_linear_angular(init_vel, 0)
+        c0 = q, v0
+        self.state = p.initialize(c0=c0, t0=0)
 
         logger.info('Starting at %s %s' % (self.cur_pos, self.cur_angle))
 
@@ -1334,13 +1349,16 @@ class Simulator(gym.Env):
         action = np.clip(action, -1, 1)
         # Actions could be a Python list
         action = np.array(action)
-        
-        frame_skip = self.frame_skip
-        if self.domain_rand:
-            frame_skip = self.randomization_settings["frame_skip"]
-        
-        for _ in range(int(frame_skip)):
-            self.update_physics(action)
+        for _ in range(self.frame_skip):
+            self.update_physics(action=np.array([0., 0.]))
+
+            action = DynamicsInfo(motor_left=action[0], motor_right=action[1])
+            self.state = self.state.integrate(self.delta_time, action)
+            q = self.state.TSE2_from_state()[0]
+            cur_pos, cur_angle = self.weird_from_cartesian(q)
+            self.cur_pos = cur_pos
+            self.cur_angle = cur_angle
+
 
         # Generate the current camera image
         obs = self.render_obs()
@@ -1368,7 +1386,7 @@ class Simulator(gym.Env):
             done_code = 'max-steps-reached'
         else:
             done = False
-            reward = self.compute_reward(self.cur_pos, self.cur_angle, self.speed)
+            reward = self.compute_reward(self.cur_pos, self.cur_angle, self.robot_speed)
             msg = ''
             done_code = 'in-progress'
         return DoneRewardInfo(done=done, done_why=msg, reward=reward, done_code=done_code)
