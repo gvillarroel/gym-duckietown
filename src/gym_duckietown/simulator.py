@@ -29,7 +29,7 @@ from gym.utils import seeding
 
 from .collision import *
 # Objects utility code
-from .objects import WorldObj, DuckieObj, TrafficLightObj, DuckiebotObj
+from .objects import WorldObj, DuckieObj, TrafficLightObj, DuckiebotObj, CheckerboardObj
 # Graphics utility code
 from .objmesh import *
 # Randomization code
@@ -373,10 +373,10 @@ class Simulator(gym.Env):
         self.speed = 0
 
         if self.randomize_maps_on_reset:
-            map_name = np.random.choice(self.map_names)
+            map_name = self.np_random.choice(self.map_names)
             self._load_map(map_name)
 
-        self.randomization_settings = self.randomizer.randomize()
+        self.randomization_settings = self.randomizer.randomize(rng=self.np_random)
 
         # Horizon color
         # Note: we explicitly sample white and grey/black because
@@ -707,6 +707,8 @@ class Simulator(gym.Env):
             assert not ('height' in desc and 'scale' in desc), "cannot specify both height and scale"
 
             static = desc.get('static', True)
+            #static = desc.get('static', False)
+            print('static is now', static)
 
             obj_desc = {
                 'kind': kind,
@@ -730,6 +732,8 @@ class Simulator(gym.Env):
                                        ROBOT_WIDTH, ROBOT_LENGTH)
                 elif kind == "duckie":
                     obj = DuckieObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT, self.road_tile_size)
+                elif kind == "checkerboard":
+                    obj = CheckerboardObj(obj_desc, self.domain_rand, SAFETY_RAD_MULT, self.road_tile_size)
                 else:
                     msg = 'I do not know what object this is: %s' % kind
                     raise Exception(msg)
@@ -744,9 +748,9 @@ class Simulator(gym.Env):
             possible_tiles = find_candidate_tiles(obj.obj_corners, self.road_tile_size)
 
             # If the object intersects with a drivable tile
-            if not static or (static and kind != "trafficlight" and self._collidable_object(
+            if static and kind != "trafficlight" and self._collidable_object(
                     obj.obj_corners, obj.obj_norm, possible_tiles
-            )):
+            ):
                 self.collidable_centers.append(pos)
                 self.collidable_corners.append(obj.obj_corners.T)
                 self.collidable_norms.append(obj.obj_norm)
@@ -1195,24 +1199,19 @@ class Simulator(gym.Env):
         """
         Tensor-based OBB Collision detection
         """
-
-        # If there are no objects to collide against, stop
-        if len(self.collidable_corners) == 0:
-            return False
-
         # Generate the norms corresponding to each face of BB
         agent_norm = generate_norm(agent_corners)
 
-        # Check collisions with static objects
-        collision = intersects(
-                agent_corners,
-                self.collidable_corners,
-                agent_norm,
-                self.collidable_norms
-        )
-
-        if collision:
-            return True
+        # Check collisions with Static Objects
+        if len(self.collidable_corners) > 0:
+            collision = intersects(
+                    agent_corners,
+                    self.collidable_corners,
+                    agent_norm,
+                    self.collidable_norms
+            )
+            if collision:
+                return True
 
         # Check collisions with Dynamic Objects
         for obj in self.objects:
@@ -1264,6 +1263,7 @@ class Simulator(gym.Env):
         return res
 
     def update_physics(self, action, delta_time=None):
+        #print("updating physics")
         if delta_time is None:
             delta_time = self.delta_time
         self.wheelVels = action * self.robot_speed * 1
@@ -1292,6 +1292,7 @@ class Simulator(gym.Env):
 
                 obj.step(delta_time, self.closest_curve_point, same_tile_obj)
             else:
+                #print("stepping all objects")
                 obj.step(delta_time)
 
     def get_agent_info(self):
@@ -1478,7 +1479,7 @@ class Simulator(gym.Env):
             gl.glRotatef(self.cam_angle[0], 1, 0, 0)
             gl.glRotatef(self.cam_angle[1], 0, 1, 0)
             gl.glRotatef(self.cam_angle[2], 0, 0, 1)
-            gl.glTranslatef(0, 0, self._perturb(CAMERA_FORWARD_DIST))
+            gl.glTranslatef(0, 0, CAMERA_FORWARD_DIST)
 
         if top_down:
             gl.gluLookAt(

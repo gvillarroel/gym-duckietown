@@ -1,4 +1,4 @@
-pyglet==1.3.2
+pyglet
 gym>=0.9.0
 numpy>=1.10.0
 
@@ -10,4 +10,4 @@ cloudpickle
 PyGeometry
 dataclasses
 carnivalmirror==0.6.2
-duckietown-world-daffy>=5.0.10
+duckietown-world-daffy>=5.0.11
