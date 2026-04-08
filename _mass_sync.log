@@ -2,3 +2,102 @@ fetching remotes
 starting branch: master
 dirty files: 131
 checkpoint commit
+  [master 10ba24c] chore: checkpoint local changes
+   131 files changed, 59051 insertions(+), 59047 deletions(-)
+   create mode 100644 _mass_sync.log
+pushing master
+  To https://github.com/gvillarroel/gym-duckietown.git
+     90fd3b1..10ba24c  master -> master
+  branch 'master' set up to track 'origin/master'.
+creating main from master
+current branch: main
+pushing main
+  remote: 
+  remote: Create a pull request for 'main' on GitHub by visiting:        
+  remote:      https://github.com/gvillarroel/gym-duckietown/pull/new/main        
+  remote: 
+  To https://github.com/gvillarroel/gym-duckietown.git
+   * [new branch]      main -> main
+  branch 'main' set up to track 'origin/main'.
+merge targets: 16
+merging master
+  merge ok
+merging origin
+  merge ok
+merging origin/aido1_lf1_r3-v3
+  merge ok
+merging origin/aido2
+  merge ok
+merging origin/aido2_lf_r1
+  merge ok
+merging origin/collisions-patch
+  Auto-merging .bumpversion.cfg
+  Auto-merging .circleci/config.yml
+  Auto-merging .dockerignore
+  Auto-merging .gitignore
+  Auto-merging Makefile
+  Auto-merging README.md
+  Auto-merging benchmark.py
+  Auto-merging docker/AIDO1/server-python2/requirements.txt
+  Auto-merging docker/AIDO1/server-python3/Dockerfile
+  Auto-merging free_camera.py
+  CONFLICT (modify/delete): gym_duckietown/meshes/duckiebot.mtl deleted in origin/collisions-patch and modified in HEAD.  Version HEAD of gym_duckietown/meshes/duckiebot.mtl left in tree.
+  CONFLICT (modify/delete): gym_duckietown/meshes/duckiebot.obj deleted in origin/collisions-patch and modified in HEAD.  Version HEAD of gym_duckietown/meshes/duckiebot.obj left in tree.
+  CONFLICT (modify/delete): gym_duckietown/randomization/config/default_dr.json deleted in origin/collisions-patch and modified in HEAD.  Version HEAD of gym_duckietown/randomization/config/default_dr.json left in tree.
+  Auto-merging joystick_control.py
+  Auto-merging learning/reinforcement/pytorch/train_reinforcement.py
+  Auto-merging manual_control.py
+  Auto-merging requirements.txt
+  Auto-merging run_tests.py
+  Auto-merging src/gym_duckietown/__init__.py
+  Auto-merging src/gym_duckietown/distortion.py
+  Auto-merging src/gym_duckietown/envs/duckiebot_env.py
+  Auto-merging src/gym_duckietown/envs/duckietown_env.py
+  Auto-merging src/gym_duckietown/objects.py
+  Auto-merging src/gym_duckietown/randomization/config/default.json
+  Auto-merging src/gym_duckietown/simulator.py
+  CONFLICT (rename/delete): gym_duckietown/textures/curve_left_2.png renamed to src/gym_duckietown/textures/curve_left_2.png in origin/collisions-patch, but deleted in HEAD.
+  CONFLICT (file location): gym_duckietown/textures/curve_left_4.png added in HEAD inside a directory that was renamed in origin/collisions-patch, suggesting it should perhaps be moved to src/gym_duckietown/textures/curve_left_4.png.
+  Automatic merge failed; fix conflicts and then commit the result.
+  conflicts: 5
+  [main 8f05ad8] Merge remote-tracking branch 'origin/collisions-patch'
+merging origin/daffy
+  merge ok
+merging origin/daffy-aido4
+  CONFLICT (modify/delete): docker/AIDO1/server-python3/launch-gym-server-with-xvfb.sh deleted in origin/daffy-aido4 and modified in HEAD.  Version HEAD of docker/AIDO1/server-python3/launch-gym-server-with-xvfb.sh left in tree.
+  CONFLICT (modify/delete): docker/AIDO1/server-python3/launch-xvfb deleted in origin/daffy-aido4 and modified in HEAD.  Version HEAD of docker/AIDO1/server-python3/launch-xvfb left in tree.
+  CONFLICT (modify/delete): docker/AIDO1/server-python3/requirements.txt deleted in origin/daffy-aido4 and modified in HEAD.  Version HEAD of docker/AIDO1/server-python3/requirements.txt left in tree.
+  Auto-merging learning/utils/teacher.py
+  Auto-merging requirements.txt
+  Auto-merging src/gym_duckietown/collision.py
+  Auto-merging src/gym_duckietown/graphics.py
+  Auto-merging src/gym_duckietown/maps/loop_dyn_duckiebots.yaml
+  Auto-merging src/gym_duckietown/maps/loop_empty.yaml
+  Auto-merging src/gym_duckietown/maps/loop_obstacles.yaml
+  Auto-merging src/gym_duckietown/maps/loop_pedestrians.yaml
+  Auto-merging src/gym_duckietown/maps/udem1.yaml
+  Auto-merging src/gym_duckietown/objmesh.py
+  Auto-merging src/gym_duckietown/simulator.py
+  Automatic merge failed; fix conflicts and then commit the result.
+  conflicts: 3
+  [main ef35376] Merge remote-tracking branch 'origin/daffy-aido4'
+merging origin/master
+  merge ok
+merging origin/moreducks
+  merge ok
+merging origin/provide-map
+  merge ok
+merging origin/python2
+  merge ok
+merging origin/python2-roslog
+  merge ok
+merging origin/sejour-2020
+  merge ok
+merging origin/sejour-2020-master
+  merge ok
+merging origin/texture-multisample
+  merge ok
+final push of main
+  To https://github.com/gvillarroel/gym-duckietown.git
+     10ba24c..8760a2a  main -> main
+final dirty files: 1
