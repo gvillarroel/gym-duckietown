@@ -1,5 +1,4 @@
-from setuptools import setup
-
+from setuptools import find_packages, setup
 
 def get_version(filename):
     import ast
@@ -16,24 +15,31 @@ def get_version(filename):
     return version
 
 
-version = get_version(filename='gym_duckietown/__init__.py')
+version = get_version(filename='src/gym_duckietown/__init__.py')
+
+line = 'daffy'
 
 setup(
-        name='gym_duckietown',
+        name=f'duckietown-gym-{line}',
+        package_dir={'': 'src'},
+        packages=find_packages('src'),
+        zip_safe=False,
         version=version,
         keywords='duckietown, environment, agent, rl, openaigym, openai-gym, gym',
+        include_package_data=True,
         install_requires=[
             'gym>=0.9.0',
             'numpy>=1.10.0',
-            'pyglet',
+            'pyglet<=1.3.2,>=1.2.0',
             'pyzmq>=16.0.0',
             'scikit-image>=0.13.1',
             'opencv-python>=3.4',
             'pyyaml>=3.11',
             'cloudpickle',
-            'duckietown_world',
+            'duckietown-world-daffy',
             'pygeometry',
-            
+            'dataclasses',
+            'carnivalmirror==0.6.2',
         ],
         entry_points={
             'console_scripts': [

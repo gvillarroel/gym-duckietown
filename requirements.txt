@@ -1,4 +1,4 @@
-pyglet
+pyglet==1.3.2
 gym>=0.9.0
 numpy>=1.10.0
 
@@ -7,6 +7,7 @@ scikit-image>=0.13.1
 opencv-python>=3.4
 pyyaml>=3.11
 cloudpickle
-duckietown_slimremote>=2018.8.2
-pygeometry
+PyGeometry
 dataclasses
+carnivalmirror==0.6.2
+duckietown-world-daffy>=5.0.10

@@ -28,32 +28,6 @@ This simulator was created as part of work done at [Mila](https://mila.quebec/).
 Welcome to <b>Duckietown</b>! 
 </h2>
 
-## Table of Contents
-
-
-1. [Gym-Duckietown](#Gym-Duckietown)
-   1. [Introduction](#Introduction)
-   2. [Installation](#Installation)
-      1. [Installation Using Conda (Alternative Method)](#Installation-Using-Conda-Alternative-Method)
-   3. [Usage](#Usage)
-      1. [Testing](#Testing)
-      2. [Learning](#Learning)
-   4. [Design](#Design)
-      1. [Map File Format](#Map-File-Format)
-      2. [Observations](#Observations)
-      3. [Actions](#Actions)
-      4. [Reward Function](#Reward-Function)
-   5. [Troubleshooting](#Troubleshooting)
-      1. [ImportError: Library "GLU" not found](#ImportError-Library-GLU-not-found)
-      2. [NoSuchDisplayException: Cannot connect to "None"](#NoSuchDisplayException-Cannot-connect-to-None)
-      3. [Running headless](#Running-headless)
-      4. [Running headless and training in a cloud based environment (AWS)](#Running-headless-and-training-in-a-cloud-based-environment-AWS)
-      5. [Poor performance, low frame rate](#Poor-performance-low-frame-rate)
-      6. [RL training doesn't converge](#RL-training-doesnt-converge)
-      7. [Unknown encoder 'libx264' when using gym.wrappers.Monitor](#Unknown-encoder-libx264-when-using-gymwrappersMonitor)
-
-Thanks @na018 for contributing this!
-
 ## Introduction
 
 Gym-Duckietown is a simulator for the [Duckietown](https://duckietown.org) Universe, written in pure Python/OpenGL (Pyglet). It places your agent, a Duckiebot, inside of an instance of a Duckietown: a loop of roads with turns, intersections, obstacles, Duckie pedestrians, and other Duckiebots. It can be a pretty hectic place!
@@ -106,9 +80,7 @@ Requirements:
 - Pyglet
 - PyYAML
 - cloudpickle
-- pygeometry
-- dataclasses (if using Python3.6)
-- PyTorch or Tensorflow (to use the scripts in `learning/`)
+- PyTorch
 
 You can install all the dependencies except PyTorch with `pip3`:
 
@@ -117,6 +89,10 @@ git clone https://github.com/duckietown/gym-duckietown.git
 cd gym-duckietown
 pip3 install -e .
 ```
+
+Reinforcement learning code forked from [this repository](https://github.com/ikostrikov/pytorch-a2c-ppo-acktr)
+is included under [/pytorch_rl](/pytorch_rl). If you wish to use this code, you
+should install [PyTorch](http://pytorch.org/).
 
 ### Installation Using Conda (Alternative Method)
 
@@ -135,15 +111,49 @@ source activate gym-duckietown
 export PYTHONPATH="${PYTHONPATH}:`pwd`"
 ```
 
-## Usage
+### Docker Image
+
+There is a pre-built Docker image available [on Docker Hub](https://hub.docker.com/r/duckietown/gym-duckietown), which also contains an installation of PyTorch.
+
+*Note that in order to get GPU acceleration, you should install and use [nvidia-docker 2.0](https://github.com/nvidia/nvidia-docker/wiki/Installation-(version-2.0)).*
+
+To get started, pull the `duckietown/gym-duckietown` image from Docker Hub and open a shell in the container:
 
 ```
-import gym, gym_duckietown # registers the envs!
-DUCKIETOWN = ['Duckietown-straight_road-v0','Duckietown-4way-v0','Duckietown-udem1-v0','Duckietown-small_loop-v0','Duckietown-small_loop_cw-v0','Duckietown-zigzag_dists-v0','Duckietown-loop_obstacles-v0','Duckietown-loop_pedestrians-v0']
-for town in DUCKIETOWN:
-  env = gym.make(town)
-  print(town, env.observation_space, env.action_space)
+nvidia-docker pull duckietown/gym-duckietown && \
+nvidia-docker run -it duckietown/gym-duckietown bash
 ```
+
+Then create a virtual display:
+
+```
+Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &> xvfb.log &
+export DISPLAY=:0
+```
+
+Now, you are ready to start training a policy using RL:
+
+```
+python3 pytorch_rl/main.py \
+        --algo a2c \
+        --env-name Duckietown-loop_obstacles-v0 \
+        --lr 0.0002 \
+        --max-grad-norm 0.5 \
+        --no-vis \
+        --num-steps 20
+```
+
+If you need to do so, you can build a Docker image by running the following command from the root directory of this repository:
+
+```
+docker build . \
+       --file ./docker/standalone/Dockerfile \
+       --no-cache=true \
+       --network=host \
+       --tag <YOUR_TAG_GOES_HERE>
+```
+
+## Usage
 
 ### Testing
 
@@ -155,41 +165,47 @@ There is a simple UI application which allows you to control the simulation or r
 
 There is also a script to run automated tests (`run_tests.py`) and a script to gather performance metrics (`benchmark.py`).
 
-### Learning
+### Reinforcement Learning
 
-`gym-duckietown` provides starter code for both reinforcement learning (Pytorch only) and imitation learning (both Tensorflow and Pytorch). In the following section, we describe how to get started, as well as some tips on improving both agents.
-
-Within the `learning/` subdirectory, you will find `imitation/{tensorflow|pytorch}` and `reinforcement/pytorch`. To use either, you will want to change directories into the `learning/` directory, and call scripts from there (this allows us to import utility functions used in all three baselines while not forcing users to install both Tensorflow and Pytorch).
-
-**Pytorch Reinforcement Learning** can be run using: 
+To train a reinforcement learning agent, you can use the code provided under [/pytorch_rl](/pytorch_rl). I recommend using the A2C or ACKTR algorithms. A sample command to launch training is:
 
 ```
-python -m reinforcement.pytorch.train_reinforcement
+python3 pytorch_rl/main.py --no-vis --env-name Duckietown-small_loop-v0 --algo a2c --lr 0.0002 --max-grad-norm 0.5 --num-steps 20
 ```
 
-whereas both **Tensorflow and Pytorch Imitation Learning** can be run using:
+Then, to visualize the results of training, you can run the following command. Note that you can do this while the training process is still running. Also note that if you are running this through SSH, you will need to enable X forwarding to get a display:
 
 ```
-python -m imitation.{tensorflow|pytorch}.train_imitation
+python3 pytorch_rl/enjoy.py --env-name Duckietown-small_loop-v0 --num-stack 1 --load-dir trained_models/a2c
 ```
 
-We use `argparse` for hyperparameters, which can be found at the bottom of the training files.
+### Imitation Learning
 
-Within the `learning/utils` folder, you will find useful wrappers (`wrappers.py`), imitation learning teachers (`teacher.py`), and environment launchers (`env.py`). You can use the `utils` folder to organize helper code that can be used across all baselines, by importing as follows:
+There is a script in the `experiments` directory which automatically generates a dataset of synthetic demonstrations. It uses hillclimbing to optimize the reward obtained, and outputs a JSON file:
 
 ```
-from utils.{your_file} import {your_class | your function}
+experiments/gen_demos.py --map-name loop_obstacles
 ```
 
-Since `gym-duckietown` is heavily used in the [AI Driving Olympics](https://challenges.duckietown.org), we encourage you to take a look at some of the [tips and tricks we provide](https://docs.duckietown.org/DT19/AIDO/out/embodied_rl.html) on improving your policy and Sim2Real Transfer.
+Then you can start training an imitation learning model (conv net) with:
 
-In addition, although not directly supported in this simulator, we encourage you to check out the [Duckietown Logs](http://logs.duckietown.org/) infrastructure, which has been incredibly successful in [training imitation learning policies](https://github.com/duckietown/challenge-aido_LF-baseline-IL-logs-tensorflow/) or even "warm-starting" reinforcement learning policies.
+```
+experiments/train_imitation.py --map-name loop_obstacles
+```
+
+Finally, you can visualize what the trained model is doing with:
+
+```
+experiments/control_imitation.py --map-name loop_obstacles
+```
+
+Note that it is possible to have `gen_demos.py` and `train_imitate.py` running simultaneously, so that training takes place while new demonstrations are being generated. You can also run `control_imitate.py` periodically during training to check on learning progress.
 
 ## Design
 
 ### Map File Format
 
-The simulator supports a YAML-based file format which is designed to be easy to hand edit. See the [maps subdirectory](https://github.com/duckietown/gym-duckietown/blob/master/gym_duckietown/maps) for examples. Each map file has two main sections: a two-dimensional array of tiles, and a listing of objects to be placed around the map. The tiles are based on the [Duckietown appearance specification](http://docs.duckietown.org/DT18/opmanual_duckietown/out/duckietown_specs.html).
+The simulator supports a YAML-based file format which is designed to be easy to hand edit. See the [maps subdirectory](https://github.com/duckietown/gym-duckietown/blob/master/gym_duckietown/maps) for examples. Each map file has two main sections: a two-dimensional array of tiles, and a listing of objects to be placed around the map. The tiles are based on the [Duckietown appearance specification](http://docs.duckietown.org/daffy/opmanual_duckietown/out/duckietown_specs.html).
 
 The available tile types are:
 - empty

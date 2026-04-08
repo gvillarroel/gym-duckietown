@@ -56,7 +56,6 @@ def _train(args):
     env_counter = 0
     reward = 0
     episode_timesteps = 0
-    
     print("Starting training")
     while total_timesteps < args.max_timesteps:
         
@@ -75,7 +74,7 @@ def _train(args):
                     print("rewards at time {}: {}".format(total_timesteps, evaluations[-1]))
 
                     if args.save_models:
-                        policy.save(filename='ddpg', directory=args.model_dir)
+                        policy.save(file_name='ddpg', directory=args.model_dir)
                     np.savez("./results/rewards.npz",evaluations)
 
             # Reset environment
@@ -83,7 +82,6 @@ def _train(args):
             obs = env.reset()
             done = False
             episode_reward = 0
-            episode_timesteps = 0
             episode_num += 1
 
         # Select action randomly or according to policy
